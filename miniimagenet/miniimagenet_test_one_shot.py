@@ -106,7 +106,7 @@ class RelationNetwork(nn.Module):
         out = self.layer2(out)
         out = out.view(out.size(0),-1)
         out = F.relu(self.fc1(out))
-        out = F.sigmoid(self.fc2(out))
+        out = torch.sigmoid(self.fc2(out))
         return out
 
 def weights_init(m):
@@ -137,8 +137,8 @@ def main():
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
 
 
-    feature_encoder.cuda(GPU)
-    relation_network.cuda(GPU)
+    feature_encoder.cuda()
+    relation_network.cuda()
 
 
     if os.path.exists(str("./models/miniimagenet_feature_encoder_" + str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
@@ -169,8 +169,8 @@ def main():
                 for test_images,test_labels in test_dataloader:
                     batch_size = test_labels.shape[0]
                     # calculate features
-                    sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
-                    test_features = feature_encoder(Variable(test_images).cuda(GPU)) # 20x64
+                    sample_features = feature_encoder(Variable(sample_images).cuda()) # 5x64
+                    test_features = feature_encoder(Variable(test_images).cuda()) # 20x64
 
                     # calculate relations
                     # each batch sample link to every samples to calculate relations
@@ -182,6 +182,7 @@ def main():
                     relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
                     _,predict_labels = torch.max(relations.data,1)
+                    predict_labels = predict_labels.cpu()
 
                     rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(batch_size)]
 
