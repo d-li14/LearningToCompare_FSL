@@ -17,6 +17,7 @@ import os
 import math
 import argparse
 import random
+from tensoroardX import SummaryWriter
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
 parser.add_argument("-f","--feature_dim",type = int, default = 64)
@@ -97,7 +98,7 @@ class RelationNetwork(nn.Module):
         out = self.layer2(out)
         out = out.view(out.size(0),-1)
         out = F.relu(self.fc1(out))
-        out = F.sigmoid(self.fc2(out))
+        out = torch.sigmoid(self.fc2(out))
         return out
 
 def weights_init(m):
@@ -130,8 +131,8 @@ def main():
     feature_encoder.apply(weights_init)
     relation_network.apply(weights_init)
 
-    feature_encoder.cuda(GPU)
-    relation_network.cuda(GPU)
+    feature_encoder.cuda()
+    relation_network.cuda()
 
     feature_encoder_optim = torch.optim.Adam(feature_encoder.parameters(),lr=LEARNING_RATE)
     feature_encoder_scheduler = StepLR(feature_encoder_optim,step_size=100000,gamma=0.5)
@@ -144,6 +145,11 @@ def main():
     if os.path.exists(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         relation_network.load_state_dict(torch.load(str("./models/omniglot_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
         print("load relation network success")
+
+    path = os.path.join('logs', str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot")
+    if not os.path.exists(path):
+        os.makedirs(path)
+    writer = SummaryWriter(path)
 
     # Step 3: build graph
     print("Training...")
@@ -169,10 +175,10 @@ def main():
         batches,batch_labels = batch_dataloader.__iter__().next()
 
         # calculate features
-        sample_features = feature_encoder(Variable(samples).cuda(GPU)) # 5x64*5*5
+        sample_features = feature_encoder(Variable(samples).cuda()) # 5x64*5*5
         sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,5,5)
         sample_features = torch.sum(sample_features,1).squeeze(1)
-        batch_features = feature_encoder(Variable(batches).cuda(GPU)) # 20x64*5*5
+        batch_features = feature_encoder(Variable(batches).cuda()) # 20x64*5*5
 
         # calculate relations
         # each batch sample link to every samples to calculate relations
@@ -184,8 +190,8 @@ def main():
         relation_pairs = torch.cat((sample_features_ext,batch_features_ext),2).view(-1,FEATURE_DIM*2,5,5)
         relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
-        mse = nn.MSELoss().cuda(GPU)
-        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda(GPU)
+        mse = nn.MSELoss().cuda()
+        one_hot_labels = Variable(torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)).cuda()
         loss = mse(relations,one_hot_labels)
 
 
@@ -196,14 +202,15 @@ def main():
 
         loss.backward()
 
-        torch.nn.utils.clip_grad_norm(feature_encoder.parameters(),0.5)
-        torch.nn.utils.clip_grad_norm(relation_network.parameters(),0.5)
+        torch.nn.utils.clip_grad_norm_(feature_encoder.parameters(),0.5)
+        torch.nn.utils.clip_grad_norm_(relation_network.parameters(),0.5)
 
         feature_encoder_optim.step()
         relation_network_optim.step()
 
+        writer.add_scalar('training loss', loss.data.item(), episode+1)
         if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.data[0])
+                print("episode:",episode+1,"loss",loss.data.item())
 
         if (episode+1)%5000 == 0:
 
@@ -221,10 +228,10 @@ def main():
                 test_images,test_labels = test_dataloader.__iter__().next()
 
                 # calculate features
-                sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
+                sample_features = feature_encoder(Variable(sample_images).cuda()) # 5x64
                 sample_features = sample_features.view(CLASS_NUM,SAMPLE_NUM_PER_CLASS,FEATURE_DIM,5,5)
                 sample_features = torch.sum(sample_features,1).squeeze(1)
-                test_features = feature_encoder(Variable(test_images).cuda(GPU)) # 20x64
+                test_features = feature_encoder(Variable(test_images).cuda()) # 20x64
 
                 # calculate relations
                 # each batch sample link to every samples to calculate relations
@@ -237,6 +244,7 @@ def main():
                 relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
                 _,predict_labels = torch.max(relations.data,1)
+                predict_labels = predict_labels.cpu()
 
                 rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM*SAMPLE_NUM_PER_CLASS)]
 
@@ -244,6 +252,7 @@ def main():
 
             test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
 
+            writer.add_scalar('test accuracy', test_accuracy, episode+1)
             print("test accuracy:",test_accuracy)
 
             if test_accuracy > last_accuracy:
@@ -255,6 +264,7 @@ def main():
                 print("save networks for episode:",episode)
 
                 last_accuracy = test_accuracy
+    writer.close()
 
 
 

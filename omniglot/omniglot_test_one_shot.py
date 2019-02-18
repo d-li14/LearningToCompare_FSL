@@ -106,7 +106,7 @@ class RelationNetwork(nn.Module):
         out = self.layer2(out)
         out = out.view(out.size(0),-1)
         out = F.relu(self.fc1(out))
-        out = F.sigmoid(self.fc2(out))
+        out = torch.sigmoid(self.fc2(out))
         return out
 
 def weights_init(m):
@@ -137,8 +137,8 @@ def main():
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
 
 
-    feature_encoder.cuda(GPU)
-    relation_network.cuda(GPU)
+    feature_encoder.cuda()
+    relation_network.cuda()
 
     feature_encoder_optim = torch.optim.Adam(feature_encoder.parameters(),lr=LEARNING_RATE)
     feature_encoder_scheduler = StepLR(feature_encoder_optim,step_size=100000,gamma=0.5)
@@ -170,8 +170,8 @@ def main():
                 test_images,test_labels = test_dataloader.__iter__().next()
 
                 # calculate features
-                sample_features = feature_encoder(Variable(sample_images).cuda(GPU)) # 5x64
-                test_features = feature_encoder(Variable(test_images).cuda(GPU)) # 20x64
+                sample_features = feature_encoder(Variable(sample_images).cuda()) # 5x64
+                test_features = feature_encoder(Variable(test_images).cuda()) # 20x64
 
                 # calculate relations
                 # each batch sample link to every samples to calculate relations
@@ -184,6 +184,7 @@ def main():
                 relations = relation_network(relation_pairs).view(-1,CLASS_NUM)
 
                 _,predict_labels = torch.max(relations.data,1)
+                predict_labels = predict_labels.cpu()
 
                 rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM)]
 
