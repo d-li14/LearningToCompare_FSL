@@ -17,7 +17,7 @@ import os
 import math
 import argparse
 import random
-from tensoroardX import SummaryWriter
+from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser(description="One Shot Visual Recognition")
 parser.add_argument("-f","--feature_dim",type = int, default = 64)
